@@ -3,12 +3,12 @@ package producer
 import (
 	"context"
 	"encoding/json"
-	"log"
-	"net/http"
-	"time"
 	logs "github.com/jayanth-parthsarathy/notify/internal/common/log"
 	types "github.com/jayanth-parthsarathy/notify/internal/common/types"
 	amqp "github.com/rabbitmq/amqp091-go"
+	"log"
+	"net/http"
+	"time"
 )
 
 func handleNotification(w http.ResponseWriter, req *http.Request, ch *amqp.Channel, q *amqp.Queue) {

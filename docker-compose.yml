@@ -1,0 +1,45 @@
+services:
+  producer:
+    build:
+      context: .
+      dockerfile: ./producer.Dockerfile
+    container_name: notify_producer
+    environment:
+      RABBIT_MQ_URL: amqp://guest:guest@rabbitmq:5672/
+    ports:
+      - "8090:8090"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+  consumer:
+    build:
+      context: .
+      dockerfile: ./consumer.Dockerfile
+    container_name: notify_consumer
+    environment:
+      RABBIT_MQ_URL: amqp://guest:guest@rabbitmq:5672/
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
+  rabbitmq:
+    image: rabbitmq:latest
+    container_name: rabbitmq
+    restart: always
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+    environment:
+      RABBITMQ_DEFAULT_USER: guest
+      RABBITMQ_DEFAULT_PASS: guest
+    volumes:
+      - rabbitmq-lib:/var/lib/rabbitmq/
+      - rabbitmq-log:/var/log/rabbitmq
+    healthcheck:
+      test: rabbitmq-diagnostics -q ping
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+volumes:
+  rabbitmq-lib:
+  rabbitmq-log:

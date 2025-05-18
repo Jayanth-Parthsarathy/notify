@@ -9,7 +9,7 @@ import (
 
 func LoadEnv() {
 	err := godotenv.Load(".env")
-	logs.FailOnError(err, "Failed to load .env")
+	logs.LogError(err, "Failed to load .env")
 }
 
 func ConnectToRabbitMQ() (*amqp.Connection, *amqp.Channel) {

@@ -5,10 +5,14 @@ This is a simple notification service built using Golang that uses RabbitMQ as a
 RabbitMQ is used to improve the scalability of the system.
 Instead of overloading the main server with message processing, we offload messages to a queue, where they are handled asynchronously by worker processes.
 
-I have used Golang for this project because it is simple to use and easy to get started with.
+This project uses Golang because it is simple to use and easy to get started with.
 Additionally, goroutines and channels in Go make implementing concurrency straightforward and efficient.
 
 No external libraries were used for setting up the HTTP server; the standard library was sufficient for this use case.
+
+This project also implements a Dead Letter Queue for handling messages that were not be able to be processed for some reason
+
+This project is also fully dockerized with dependencies like RabbitMQ
 
 This project currently consists of two files:
 
@@ -18,9 +22,13 @@ When a request is made to this endpoint with an email and message, the server pu
 * `cmd/producer/producer.go`: This is the consumer application.
 It reads messages from the queue and uses multiple concurrent workers to process and send the notifications asynchronously.
 
-I have also implemented a Dead Letter Queue for handling messages that were not be able to be processed for some reason
-
 ## Usage
+
+### Using docker
+
+`docker-compose up --build`
+
+### Manual
 
 #### Copy the .env.test and change fields if necessary
 `cp .env.test .env`
@@ -38,6 +46,6 @@ I have also implemented a Dead Letter Queue for handling messages that were not 
 - [ ] Add retry logic if sending fails
 - [ ] Add basic email format validation
 - [ ] Write unit tests for sender and receiver
-- [ ] Add Dockerfile to run locally with RabbitMQ easily (Dockerize entire application)
+- [x] ~~Add Dockerfile to run locally with RabbitMQ easily (Dockerize entire application)~~
 - [ ] Add integration testing
 - [x] ~~Add Dead-Letter-Queue~~
