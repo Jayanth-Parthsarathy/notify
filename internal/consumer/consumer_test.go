@@ -1,11 +1,14 @@
 package consumer
 
 import (
+	"context"
 	"errors"
 	"os"
 	"testing"
 
+	"github.com/jackc/pgconn"
 	constants "github.com/jayanth-parthsarathy/notify/internal/common/constants"
+	consumer_types "github.com/jayanth-parthsarathy/notify/internal/consumer/types"
 	amqp "github.com/rabbitmq/amqp091-go"
 	"github.com/stretchr/testify/assert"
 	"github.com/stretchr/testify/mock"
@@ -104,6 +107,16 @@ func TestRetry_MaxRetries(t *testing.T) {
 	ch.AssertNotCalled(t, "Publish", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	msg.AssertNotCalled(t, "Ack", mock.Anything)
 }
+
+type MockDB struct {
+	mock.Mock
+}
+
+func (m *MockDB) Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error) {
+	argsCalled := m.Called(ctx, sql, args)
+	return argsCalled.Get(0).(pgconn.CommandTag), argsCalled.Error(1)
+}
+
 func TestRetry_SingleRetry(t *testing.T) {
 	ch := new(MockChannel)
 	msg := new(MockDelivery)
@@ -114,6 +127,7 @@ func TestRetry_SingleRetry(t *testing.T) {
 	msg.On("Body").Return(body)
 	msg.On("Headers").Return(amqp.Table{})
 	msg.On("ContentType").Return(contentType)
+	msg.On("MessageId").Return("")
 
 	msg.On("Ack", false).Return(nil)
 
@@ -191,6 +205,7 @@ func TestProcessMessage_FailureRetries(t *testing.T) {
 	d.On("Body").Return([]byte(valid))
 	d.On("Headers").Return(amqp.Table{"x-retry-count": int32(0)})
 	d.On("ContentType").Return("application/json")
+	d.On("MessageId").Return("")
 	d.On("Ack", false).Return(nil)
 	ch.On("Publish",
 		constants.RetryExchangeName,
@@ -231,7 +246,7 @@ func TestProcessMessage_FailureInvalidEmail(t *testing.T) {
 			return v == 1
 		}),
 	).Return(nil)
-	em.On("SendEmail", "foo", "hello", "hello world").Return(&InvalidEmailError{email: "foo", message: "Invalid email sending it to DLQ"})
+	em.On("SendEmail", "foo", "hello", "hello world").Return(&consumer_types.InvalidEmailError{Email: "foo", Message: "Invalid email sending it to DLQ"})
 
 	processMessage(d, ch, em)
 
@@ -246,12 +261,15 @@ func TestProcessDLQMessage_AckSuccess(t *testing.T) {
 	mockD.On("Headers").Return(amqp.Table{"key": "value"})
 	mockD.On("Ack", false).Return(nil)
 	mockD.On("MessageId").Return("123")
+	mockTag := pgconn.CommandTag("INSERT 0 1")
+	mockDB := new(MockDB)
+	mockDB.On("Exec", mock.Anything, mock.Anything, mock.Anything).Return(mockTag, nil)
 
 	f, err := os.CreateTemp("", "logfile")
 	assert.NoError(t, err)
 	defer os.Remove(f.Name())
 
-	err = processDLQMessage(mockD, f)
+	err = processDLQMessage(mockD, f, mockDB)
 	assert.NoError(t, err)
 
 	mockD.AssertExpectations(t)
@@ -264,12 +282,15 @@ func TestProcessDLQMessage_AckFail(t *testing.T) {
 	mockD.On("Headers").Return(amqp.Table{"key": "value"})
 	mockD.On("Ack", false).Return(assert.AnError)
 	mockD.On("Nack", false, true).Return(nil)
+	mockTag := pgconn.CommandTag("INSERT 0 1")
+	mockDB := new(MockDB)
+	mockDB.On("Exec", mock.Anything, mock.Anything, mock.Anything).Return(mockTag, nil)
 
 	f, err := os.CreateTemp("", "logfile")
 	assert.NoError(t, err)
 	defer os.Remove(f.Name())
 
-	err = processDLQMessage(mockD, f)
+	err = processDLQMessage(mockD, f, mockDB)
 	assert.Error(t, err)
 
 	mockD.AssertExpectations(t)

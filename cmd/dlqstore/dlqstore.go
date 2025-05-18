@@ -1,11 +1,10 @@
 package main
 
 import (
-	"context"
-
+	"github.com/jayanth-parthsarathy/notify/internal/common/constants"
 	"github.com/jayanth-parthsarathy/notify/internal/common/util"
-	"github.com/jayanth-parthsarathy/notify/internal/consumer"
-	consumer_types "github.com/jayanth-parthsarathy/notify/internal/consumer/types"
+	"github.com/jayanth-parthsarathy/notify/internal/dlqstore"
+	"github.com/jayanth-parthsarathy/notify/internal/dlqstore/types"
 	"github.com/sirupsen/logrus"
 )
 
@@ -17,12 +16,9 @@ func main() {
 		TimestampFormat: "2006-01-02 15:04:05",
 		PadLevelText:    true,
 	})
-	util.LoadEnv()
 	conn := util.ConnectToRabbitMQ()
-	defer conn.Close()
-	util.DeclareQueue(conn)
+	var connAdapter = dlqstore_types.NewConnectionAdapter(conn)
 	db := util.ConnectToDB()
-	defer db.Close(context.Background())
-	gmailSender := consumer_types.GmailSender{}
-	consumer.StartWorkers(conn, &gmailSender, db)
+	inspector := dlqstore.NewPgInspector(db, connAdapter, constants.MainQueueName)
+	dlqstore.StartServer(conn, inspector, db)
 }

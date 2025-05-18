@@ -11,6 +11,19 @@ services:
     depends_on:
       rabbitmq:
         condition: service_healthy
+  dlqstore:
+    build:
+      context: .
+      dockerfile: ./dlqstore.Dockerfile
+    container_name: notify_dlqstore
+    environment:
+      RABBIT_MQ_URL: ${RABBIT_MQ_URL}
+      DATABASE_URL: ${DATABASE_URL}
+    ports:
+      - "8091:8091"
+    depends_on:
+      rabbitmq:
+        condition: service_healthy
   consumer:
     build:
       context: .
@@ -22,11 +35,14 @@ services:
       FROM_EMAIL: ${FROM_EMAIL}
       SMTPHOST: ${SMTPHOST}
       SMTPPORT: ${SMTPPORT}
+      DATABASE_URL: ${DATABASE_URL}
     depends_on:
       rabbitmq:
         condition: service_healthy
+      db:
+        condition: service_healthy
   rabbitmq:
-    image: rabbitmq:latest
+    image: rabbitmq:4-management
     container_name: rabbitmq
     restart: always
     ports:
@@ -44,6 +60,34 @@ services:
       timeout: 5s
       retries: 5
       start_period: 10s
+  db:
+    image: postgres
+    container_name: postgres
+    restart: always
+    shm_size: 128mb
+    environment:
+      POSTGRES_USER: ${POSTGRES_USER}
+      POSTGRES_PASSWORD: ${POSTGRES_PASSWORD}
+      POSTGRES_DB: ${POSTGRES_DB}
+    ports:
+      - "5432:5432"
+    volumes:
+      - pgdata:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER} -d ${POSTGRES_DB}"]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+      start_period: 10s
+  migrate:
+    image: migrate/migrate
+    depends_on:
+      - db
+    volumes:
+      - ./migrations:/migrations
+    entrypoint: [ "migrate", "-path", "/migrations", "-database", "${MIGRATE_DATABASE_URL}", "up" ]
+    restart: on-failure
 volumes:
   rabbitmq-lib:
   rabbitmq-log:
+  pgdata:

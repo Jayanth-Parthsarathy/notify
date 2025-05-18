@@ -1,10 +1,12 @@
 package consumer_types
 
 import (
+	"context"
 	"fmt"
 	"net/smtp"
 	"os"
 
+	"github.com/jackc/pgconn"
 	consumer_util "github.com/jayanth-parthsarathy/notify/internal/consumer/util"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
@@ -77,4 +79,8 @@ func (g *GmailSender) SendEmail(recipient string, body string, subject string) e
 
 	err := smtp.SendMail(smtpHost+":"+smtpPort, auth, from, to, message)
 	return err
+}
+
+type DBExecutor interface {
+	Exec(ctx context.Context, sql string, args ...any) (pgconn.CommandTag, error)
 }

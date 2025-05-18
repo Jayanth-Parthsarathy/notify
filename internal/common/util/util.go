@@ -1,11 +1,14 @@
 package util
 
 import (
+	"context"
+	"os"
+
+	"github.com/jackc/pgx/v4"
 	constants "github.com/jayanth-parthsarathy/notify/internal/common/constants"
 	logs "github.com/jayanth-parthsarathy/notify/internal/common/log"
 	"github.com/joho/godotenv"
 	amqp "github.com/rabbitmq/amqp091-go"
-	"os"
 )
 
 func LoadEnv() {
@@ -135,4 +138,10 @@ func DeclareQueue(conn *amqp.Connection) {
 		nil,
 	)
 	logs.FailOnError(err, "Failed to bind retry-60s with retry_exchange")
+}
+
+func ConnectToDB() *pgx.Conn {
+	conn, err := pgx.Connect(context.Background(), os.Getenv("DATABASE_URL"))
+	logs.FailOnError(err, "Unable to connect to database")
+	return conn
 }

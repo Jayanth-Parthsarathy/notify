@@ -1,11 +1,13 @@
 package consumer
 
 import (
+	"context"
 	"encoding/json"
-	log "github.com/sirupsen/logrus"
-	logger "log"
 	"os"
 	"sync"
+
+	"github.com/jackc/pgx/v4"
+	log "github.com/sirupsen/logrus"
 
 	constants "github.com/jayanth-parthsarathy/notify/internal/common/constants"
 	logs "github.com/jayanth-parthsarathy/notify/internal/common/log"
@@ -77,6 +79,7 @@ func retry(ch consumer_types.Channel, d consumer_types.Delivery, retryCount int)
 			Body:         d.Body(),
 			Headers:      headers,
 			DeliveryMode: amqp.Persistent,
+			MessageId:    d.MessageId(),
 		},
 	)
 	logs.LogError(err, "Failed to retry")
@@ -140,7 +143,7 @@ func worker(id int, conn *amqp.Connection, wg *sync.WaitGroup, em consumer_types
 	workerConsumeAndProcessMessage(ch, id, em)
 }
 
-func dlqConsumeAndProcessMessages(ch *amqp.Channel, id int) {
+func dlqConsumeAndProcessMessages(ch *amqp.Channel, id int, db *pgx.Conn) {
 	err := ch.Qos(1, 0, false)
 	logs.LogError(err, "Failed to set qos for channel")
 	f, err := os.OpenFile("nack.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
@@ -149,7 +152,7 @@ func dlqConsumeAndProcessMessages(ch *amqp.Channel, id int) {
 	logs.LogError(err, "Failed to open log file")
 	for d := range dlqMsgs {
 		log.Debugf("DLQ Worker %d: Started processing message", id)
-		err = processDLQMessage(consumer_types.NewDeliveryAdapter(d), f)
+		err = processDLQMessage(consumer_types.NewDeliveryAdapter(d), f, db)
 		logs.LogError(err, "Error with processDLQMessage")
 		if err == nil {
 			log.Debugf("DLQ Worker %d: Finished processing message", id)
@@ -157,17 +160,31 @@ func dlqConsumeAndProcessMessages(ch *amqp.Channel, id int) {
 	}
 }
 
-func dlqWorker(id int, conn *amqp.Connection, wg *sync.WaitGroup) {
+func dlqWorker(id int, conn *amqp.Connection, wg *sync.WaitGroup, db *pgx.Conn) {
 	ch := util.CreateChannel(conn)
 	defer ch.Close()
 	defer wg.Done()
-	dlqConsumeAndProcessMessages(ch, id)
+	dlqConsumeAndProcessMessages(ch, id, db)
 }
 
-func processDLQMessage(d consumer_types.Delivery, f *os.File) error {
-	fileLogger := logger.New(f, "DLQ: ", logger.LstdFlags|logger.Lmsgprefix)
-	fileLogger.Printf("Message ID: %s, Body: %s, Headers: %v", d.MessageId(), d.Body(), d.Headers())
-	err := d.Ack(false)
+func processDLQMessage(d consumer_types.Delivery, f *os.File, db consumer_types.DBExecutor) error {
+	bodyJson := d.Body()
+	headersMap := make(map[string]interface{})
+	for k, v := range d.Headers() {
+		headersMap[k] = v
+	}
+	_, err := db.Exec(context.Background(),
+		`INSERT INTO dlq_messages (message_id, body, headers) VALUES ($1, $2, $3)`,
+		d.MessageId(),
+		bodyJson,
+		headersMap,
+	)
+	if err != nil {
+		logs.LogError(err, "Failed to insert DLQ message into DB")
+		_ = d.Nack(false, true)
+		return err
+	}
+	err = d.Ack(false)
 	logs.LogError(err, "Failed to Ack DLQ message")
 	if err != nil {
 		d.Nack(false, true)
@@ -176,7 +193,7 @@ func processDLQMessage(d consumer_types.Delivery, f *os.File) error {
 	return nil
 }
 
-func StartWorkers(conn *amqp.Connection, emailSender consumer_types.EmailSender) {
+func StartWorkers(conn *amqp.Connection, emailSender consumer_types.EmailSender, db *pgx.Conn) {
 	numWorkers := 5
 	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
@@ -184,6 +201,6 @@ func StartWorkers(conn *amqp.Connection, emailSender consumer_types.EmailSender)
 		go worker(i, conn, &wg, emailSender)
 	}
 	wg.Add(1)
-	go dlqWorker(numWorkers+1, conn, &wg)
+	go dlqWorker(numWorkers+1, conn, &wg, db)
 	wg.Wait()
 }

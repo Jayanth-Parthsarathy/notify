@@ -6,6 +6,7 @@ import (
 	"net/http"
 	"time"
 
+	"github.com/google/uuid"
 	constants "github.com/jayanth-parthsarathy/notify/internal/common/constants"
 	logs "github.com/jayanth-parthsarathy/notify/internal/common/log"
 	types "github.com/jayanth-parthsarathy/notify/internal/common/types"
@@ -38,6 +39,7 @@ func publishMessage(jsonBody []byte, ch producer_types.Channel, w http.ResponseW
 		DeliveryMode: amqp.Persistent,
 		ContentType:  "application/json",
 		Body:         jsonBody,
+		MessageId:    uuid.New().String(),
 	})
 	if err != nil {
 		logs.LogError(err, "Failed to publish message:")

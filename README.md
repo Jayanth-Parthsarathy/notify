@@ -24,6 +24,8 @@ It is designed to offload message handling from the main server to a queue, wher
 
 * Includes basic integration testing for the flow
 
+* Features a simple HTTP DLQ Store inspector that you can use to list messages that were previously in the DLQ and requeue them if needed by the messageId (Uses persistent DB (Postgres) for storing the failed messages)
+
 It currently consists of two main files:
 
 * `cmd/consumer/consumer.go`: This is an HTTP server that exposes a /notify endpoint.
@@ -31,6 +33,8 @@ When a request is made to this endpoint with an email and message, the server pu
 
 * `cmd/producer/producer.go`: This is the consumer application.
 It reads messages from the queue and uses multiple concurrent workers to process and send the notifications asynchronously.
+
+* `cmd/dlqstore/dlqstore.go`: Inspector server to list/requeue failed messages from Postgres
 
 ## 🚀 Usage
 
@@ -70,11 +74,59 @@ All core components are covered by unit tests with mock logic for external depen
 ### 📬 API Endpoint
 `POST /notify`
 
+Request
 ```json
 {
   "email": "user@example.com",
   "message": "Hello from Notify!",
   "subject": "Hello"
+}
+```
+### 🛠 DLQ Inspector API
+The DLQ Inspector is an optional module that lets you list or requeue messages that failed permanently and were stored in PostgreSQL.
+
+`GET /inspect`
+Lists the most recent messages in the DLQ (max: 10 messages).
+
+Response
+``` json
+[
+  {
+    "ID": "ea003472-becf-4347-865b-e7a5d19099c0",
+    "Headers": {
+      "x-death": [
+        {
+          "count": 1,
+          "exchange": "",
+          "queue": "notification",
+          "reason": "rejected",
+          "routing-keys": ["notification"],
+          "time": "xxx"
+        }
+      ],
+      "x-first-death-exchange": "",
+      "x-first-death-queue": "notification",
+      "x-first-death-reason": "rejected",
+      "x-last-death-exchange": "",
+      "x-last-death-queue": "notification",
+      "x-last-death-reason": "rejected"
+    },
+    "Payload": "{\"email\": \"xxx@gmail.com\", \"message\": \"xxx!\", \"subject\": \"xxx\"}",
+    "Type": "",
+    "Raw": null
+  }
+  ...
+]
+```
+
+`POST /requeue`
+Requeues a message from the DLQ back into RabbitMQ for reprocessing.
+
+
+Request
+``` json
+{
+  "messageId": "message-uuid-1"
 }
 ```
 
@@ -85,4 +137,5 @@ All core components are covered by unit tests with mock logic for external depen
 - [x] ~~Add Dead-Letter-Queue~~
 - [x] ~~Add basic email format validation~~
 - [x] ~~Add integration testing~~
+- [x] ~~Add dlq inspector with persistence to allow for manual requeue~~
 - [ ] Create system architecture diagram for understanding
