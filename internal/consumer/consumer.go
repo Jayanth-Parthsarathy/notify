@@ -2,10 +2,13 @@ package consumer
 
 import (
 	"encoding/json"
+	"fmt"
 	"log"
 	"net/smtp"
 	"os"
 	"sync"
+
+	"net/mail"
 
 	constants "github.com/jayanth-parthsarathy/notify/internal/common/constants"
 	logs "github.com/jayanth-parthsarathy/notify/internal/common/log"
@@ -15,10 +18,27 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
+func valid(email string) bool {
+	_, err := mail.ParseAddress(email)
+	return err == nil
+}
+
+type InvalidEmailError struct {
+	email   string
+	message string
+}
+
+func (e *InvalidEmailError) Error() string {
+	return fmt.Sprintf("%s - %s", e.email, e.message)
+}
+
 type GmailSender struct {
 }
 
 func (g *GmailSender) SendEmail(recipient string, body string, subject string) error {
+	if !valid(recipient) {
+		return &InvalidEmailError{email: recipient, message: "Invalid email sending it to DLQ"}
+	}
 	from := os.Getenv("FROM_EMAIL")
 	password := os.Getenv("APP_PASSWORD")
 	to := []string{recipient}
@@ -121,14 +141,20 @@ func processMessage(d consumer_types.Delivery, ch consumer_types.Channel, em con
 	err = em.SendEmail(reqBody.Email, reqBody.Message, reqBody.Subject)
 	logs.LogError(err, "Failed to send email")
 	if err != nil {
-		retry(ch, d, retryCount+1)
+		if _, ok := err.(*InvalidEmailError); ok {
+			nackErr := d.Nack(false, false)
+			logs.LogError(nackErr, "Failed to nack on invalid email")
+		} else {
+			retry(ch, d, retryCount+1)
+		}
 		return
 	}
 	log.Printf("The message recipient is: %s and the message is: %s", reqBody.Email, reqBody.Message)
 	err = d.Ack(false)
 	logs.LogError(err, "Not able to acknowledge:")
 	if err != nil {
-		d.Nack(false, true)
+		err = d.Nack(false, true)
+		logs.LogError(err, "Failed to nack")
 		return
 	}
 }

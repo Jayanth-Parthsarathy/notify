@@ -81,6 +81,6 @@ All core components are covered by unit tests with mock logic for external depen
 - [x] ~~Write unit tests for sender and receiver~~
 - [x] ~~Add Dockerfile to run locally with RabbitMQ easily (Dockerize entire application)~~
 - [x] ~~Add Dead-Letter-Queue~~
-- [ ] Add basic email format validation
+- [x] ~~Add basic email format validation~~
 - [ ] Add integration testing
 - [ ] Create system architecture diagram for understanding

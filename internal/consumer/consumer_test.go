@@ -202,3 +202,34 @@ func TestProcessMessage_FailureRetries(t *testing.T) {
 	ch.AssertCalled(t, "Publish", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	em.AssertCalled(t, "SendEmail", "foo@bar.com", "hello", "hello world")
 }
+
+// should not retry
+func TestProcessMessage_FailureInvalidEmail(t *testing.T) {
+	d := new(MockDelivery)
+	ch := new(MockChannel)
+	em := new(MockEmailSender)
+
+	// invalid email
+	valid := `{"email":"foo","message":"hello", "subject":"hello world"}`
+	d.On("Body").Return([]byte(valid))
+	d.On("Headers").Return(amqp.Table{"x-retry-count": int32(0)})
+	d.On("ContentType").Return("application/json")
+	d.On("Ack", false).Return(nil)
+	d.On("Nack", false, false).Return(nil)
+	ch.On("Publish",
+		constants.RetryExchangeName,
+		constants.Retry10sQueue,
+		false, false,
+		mock.MatchedBy(func(pub amqp.Publishing) bool {
+			v := getRetryCount(pub.Headers)
+			return v == 1
+		}),
+	).Return(nil)
+	em.On("SendEmail", "foo", "hello", "hello world").Return(&InvalidEmailError{email: "foo", message: "Invalid email sending it to DLQ"})
+
+	processMessage(d, ch, em)
+
+	ch.AssertNotCalled(t, "Publish", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	em.AssertCalled(t, "SendEmail", "foo", "hello", "hello world")
+	d.AssertCalled(t, "Nack", false, false)
+}
