@@ -20,6 +20,12 @@ func failOnError(err error, msg string) {
 	}
 }
 
+func logError(err error, msg string) {
+	if err != nil {
+		log.Printf("%s : %s", msg, err)
+	}
+}
+
 func handleNotification(w http.ResponseWriter, req *http.Request, ch *amqp.Channel, q *amqp.Queue) {
 	if req.Method != http.MethodPost {
 		http.Error(w, "Only post method is accepted", http.StatusMethodNotAllowed)
@@ -44,9 +50,7 @@ func handleNotification(w http.ResponseWriter, req *http.Request, ch *amqp.Chann
 			ContentType: "application/json",
 			Body:        jsonBody,
 		})
-		if err != nil {
-			log.Printf("Failed to publish message: %s", err)
-		}
+		logError(err, "Failed to publish message:")
 		log.Printf("Published message: %s\n", string(jsonBody))
 	}()
 	w.WriteHeader(http.StatusOK)
@@ -72,7 +76,6 @@ func main() {
 	http.HandleFunc("/notify", func(w http.ResponseWriter, req *http.Request) {
 		handleNotification(w, req, ch, &q)
 	})
-	if err := http.ListenAndServe(":8090", nil); err != nil {
-		log.Fatalf("Server failed to start: %v", err)
-	}
+	err = http.ListenAndServe(":8090", nil)
+	failOnError(err, "Server failed to start")
 }
