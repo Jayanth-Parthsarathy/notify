@@ -11,6 +11,7 @@ import (
 	logs "github.com/jayanth-parthsarathy/notify/internal/common/log"
 	types "github.com/jayanth-parthsarathy/notify/internal/common/types"
 	"github.com/jayanth-parthsarathy/notify/internal/common/util"
+	producer_types "github.com/jayanth-parthsarathy/notify/internal/producer/types"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -30,7 +31,7 @@ func validateRequestBody(w http.ResponseWriter, req *http.Request) []byte {
 	return jsonBody
 }
 
-func publishMessage(jsonBody []byte, ch *amqp.Channel, w http.ResponseWriter, ctx context.Context) error {
+func publishMessage(jsonBody []byte, ch producer_types.Channel, w http.ResponseWriter, ctx context.Context) error {
 	err := ch.PublishWithContext(ctx, "", constants.MainQueueName, false, false, amqp.Publishing{
 		DeliveryMode: amqp.Persistent,
 		ContentType:  "application/json",
@@ -50,8 +51,7 @@ func writeSuccessResponse(w http.ResponseWriter, jsonBody []byte) {
 	w.Write([]byte("Notification queued successfully"))
 }
 
-func handleNotification(w http.ResponseWriter, req *http.Request, conn *amqp.Connection) {
-	ch := util.CreateChannel(conn)
+func handleNotification(w http.ResponseWriter, req *http.Request, ch producer_types.Channel) {
 	defer ch.Close()
 	ctx, cancel := context.WithTimeout(req.Context(), 10*time.Second)
 	defer cancel()
@@ -72,7 +72,8 @@ func handleNotification(w http.ResponseWriter, req *http.Request, conn *amqp.Con
 
 func StartServer(conn *amqp.Connection) {
 	http.HandleFunc("/notify", func(w http.ResponseWriter, req *http.Request) {
-		handleNotification(w, req, conn)
+		ch := util.CreateChannel(conn)
+		handleNotification(w, req, ch)
 	})
 	err := http.ListenAndServe(":8090", nil)
 	logs.FailOnError(err, "Server failed to start")
