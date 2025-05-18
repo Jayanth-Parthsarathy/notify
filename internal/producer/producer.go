@@ -3,7 +3,6 @@ package producer
 import (
 	"context"
 	"encoding/json"
-	"log"
 	"net/http"
 	"time"
 
@@ -13,18 +12,21 @@ import (
 	"github.com/jayanth-parthsarathy/notify/internal/common/util"
 	producer_types "github.com/jayanth-parthsarathy/notify/internal/producer/types"
 	amqp "github.com/rabbitmq/amqp091-go"
+	log "github.com/sirupsen/logrus"
 )
 
 func validateRequestBody(w http.ResponseWriter, req *http.Request) []byte {
 	var reqBody types.RequestBody
 	err := json.NewDecoder(req.Body).Decode(&reqBody)
 	if err != nil {
+		logs.LogError(err, "Invalid request body")
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return nil
 	}
 	defer req.Body.Close()
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
+		logs.LogError(err, "Invalid JSON Structure")
 		http.Error(w, "Invalid JSON Structure", http.StatusInternalServerError)
 		return nil
 	}
@@ -46,7 +48,7 @@ func publishMessage(jsonBody []byte, ch producer_types.Channel, w http.ResponseW
 }
 
 func writeSuccessResponse(w http.ResponseWriter, jsonBody []byte) {
-	log.Printf("Published message: %s\n", string(jsonBody))
+	log.Debugf("Published message: %s\n", string(jsonBody))
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Notification queued successfully"))
 }
@@ -56,6 +58,7 @@ func handleNotification(w http.ResponseWriter, req *http.Request, ch producer_ty
 	ctx, cancel := context.WithTimeout(req.Context(), 10*time.Second)
 	defer cancel()
 	if req.Method != http.MethodPost {
+		log.Errorf("Method with post is accepted: %s", req.Method)
 		http.Error(w, "Only post method is accepted", http.StatusMethodNotAllowed)
 		return
 	}

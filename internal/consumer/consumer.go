@@ -2,7 +2,8 @@ package consumer
 
 import (
 	"encoding/json"
-	"log"
+	log "github.com/sirupsen/logrus"
+	logger "log"
 	"os"
 	"sync"
 
@@ -54,15 +55,15 @@ func populateHeader(headers amqp.Table, retryCount int) amqp.Table {
 }
 
 func retry(ch consumer_types.Channel, d consumer_types.Delivery, retryCount int) {
-	log.Printf("This is the %d attempt", retryCount)
+	log.Debugf("This is the %d attempt", retryCount)
 	retryQueueName := getRetryQueueName(retryCount)
 	if retryCount >= 3 {
-		log.Printf("Max retries reached. Sending to DLQ: %s", d.Body())
+		log.Warnf("Max retries reached. Sending to DLQ: %s", d.Body())
 		err := d.Nack(false, false)
 		logs.LogError(err, "Was not able to nack in retry")
 		return
 	}
-	log.Printf("This is the %d attempt going to %s queue", retryCount, retryQueueName)
+	log.Debugf("This is the %d attempt going to %s queue", retryCount, retryQueueName)
 	headers := populateHeader(d.Headers(), retryCount)
 	err := d.Ack(false)
 	logs.LogError(err, "Failed to ack")
@@ -84,7 +85,7 @@ func retry(ch consumer_types.Channel, d consumer_types.Delivery, retryCount int)
 func processMessage(d consumer_types.Delivery, ch consumer_types.Channel, em consumer_types.EmailSender) {
 	retryCount := getRetryCount(d.Headers())
 	var reqBody types.RequestBody
-	log.Printf("Message received from consumer or retry_queue: %s", d.Body())
+	log.Debugf("Message received from consumer or retry_queue: %s", d.Body())
 	err := json.Unmarshal(d.Body(), &reqBody)
 	logs.LogError(err, "Error with unmarshalling json")
 	if err != nil {
@@ -102,7 +103,7 @@ func processMessage(d consumer_types.Delivery, ch consumer_types.Channel, em con
 		}
 		return
 	}
-	log.Printf("The message recipient is: %s and the message is: %s", reqBody.Email, reqBody.Message)
+	log.Debugf("The message recipient is: %s and the message is: %s", reqBody.Email, reqBody.Message)
 	err = d.Ack(false)
 	logs.LogError(err, "Not able to acknowledge:")
 	if err != nil {
@@ -126,9 +127,9 @@ func workerConsumeAndProcessMessage(ch *amqp.Channel, id int, em consumer_types.
 	)
 	logs.FailOnError(err, "Failed to read messages")
 	for d := range msgs {
-		log.Printf("Worker %d: Started processing message", id)
+		log.Debugf("Worker %d: Started processing message", id)
 		processMessage(consumer_types.NewDeliveryAdapter(d), ch, em)
-		log.Printf("Worker %d: Finished processing message", id)
+		log.Debugf("Worker %d: Finished processing message", id)
 	}
 }
 
@@ -147,11 +148,11 @@ func dlqConsumeAndProcessMessages(ch *amqp.Channel, id int) {
 	logs.FailOnError(err, "Failed to read messages")
 	logs.LogError(err, "Failed to open log file")
 	for d := range dlqMsgs {
-		log.Printf("DLQ Worker %d: Started processing message", id)
+		log.Debugf("DLQ Worker %d: Started processing message", id)
 		err = processDLQMessage(consumer_types.NewDeliveryAdapter(d), f)
 		logs.LogError(err, "Error with processDLQMessage")
 		if err == nil {
-			log.Printf("DLQ Worker %d: Finished processing message", id)
+			log.Debugf("DLQ Worker %d: Finished processing message", id)
 		}
 	}
 }
@@ -164,8 +165,8 @@ func dlqWorker(id int, conn *amqp.Connection, wg *sync.WaitGroup) {
 }
 
 func processDLQMessage(d consumer_types.Delivery, f *os.File) error {
-	logger := log.New(f, "DLQ: ", log.LstdFlags|log.Lmsgprefix)
-	logger.Printf("Message ID: %s, Body: %s, Headers: %v", d.MessageId(), d.Body(), d.Headers())
+	fileLogger := logger.New(f, "DLQ: ", logger.LstdFlags|logger.Lmsgprefix)
+	fileLogger.Printf("Message ID: %s, Body: %s, Headers: %v", d.MessageId(), d.Body(), d.Headers())
 	err := d.Ack(false)
 	logs.LogError(err, "Failed to Ack DLQ message")
 	if err != nil {

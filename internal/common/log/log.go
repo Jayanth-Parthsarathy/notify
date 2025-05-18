@@ -1,15 +1,18 @@
 package common
 
-import "log"
+import (
+	log "github.com/sirupsen/logrus"
+)
 
 func FailOnError(err error, msg string) {
 	if err != nil {
-		log.Panicf("%s : %s", msg, err)
+		log.Errorf("%s : %s", msg, err)
+		panic(err)
 	}
 }
 
 func LogError(err error, msg string) {
 	if err != nil {
-		log.Printf("%s : %s", msg, err)
+		log.Errorf("%s : %s", msg, err)
 	}
 }

@@ -3,9 +3,17 @@ package main
 import (
 	"github.com/jayanth-parthsarathy/notify/internal/common/util"
 	"github.com/jayanth-parthsarathy/notify/internal/producer"
+	"github.com/sirupsen/logrus"
 )
 
 func main() {
+	logrus.SetLevel(logrus.DebugLevel)
+	logrus.SetFormatter(&logrus.TextFormatter{
+		ForceColors:     true,
+		FullTimestamp:   true,
+		TimestampFormat: "2006-01-02 15:04:05",
+		PadLevelText:    true,
+	})
 	util.LoadEnv()
 	conn := util.ConnectToRabbitMQ()
 	defer conn.Close()
