@@ -1,2 +1,0 @@
-package consumer_types
-

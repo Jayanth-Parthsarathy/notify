@@ -16,6 +16,7 @@ It also has retry with exponential backoff using multiple queues with different 
 
 It also implements a Dead Letter Queue for handling messages that were not be able to be processed for some reason and have reached max Number of retries (currently saves these messages to a log file)
 
+It also has unit tests for most of the internal function with mock testing wherever necessary for testing out the logic
 It currently consists of two files:
 
 * `cmd/consumer/consumer.go`: This is an HTTP server that exposes a /notify endpoint.
@@ -47,7 +48,7 @@ It reads messages from the queue and uses multiple concurrent workers to process
 ## TODO
 - [x] ~~Add retry logic if sending fails~~
 - [ ] Add basic email format validation
-- [ ] Write unit tests for sender and receiver
+- [x] ~~Write unit tests for sender and receiver~~
 - [ ] Create system architecture diagram for understanding
 - [ ] Add integration testing
 - [x] ~~Add Dockerfile to run locally with RabbitMQ easily (Dockerize entire application)~~

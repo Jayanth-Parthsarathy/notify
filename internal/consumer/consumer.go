@@ -10,6 +10,7 @@ import (
 	logs "github.com/jayanth-parthsarathy/notify/internal/common/log"
 	types "github.com/jayanth-parthsarathy/notify/internal/common/types"
 	"github.com/jayanth-parthsarathy/notify/internal/common/util"
+	consumer_types "github.com/jayanth-parthsarathy/notify/internal/consumer/types"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
@@ -52,17 +53,17 @@ func populateHeader(headers amqp.Table, retryCount int) amqp.Table {
 	return headers
 }
 
-func retry(ch *amqp.Channel, d amqp.Delivery, retryCount int) {
+func retry(ch consumer_types.Channel, d consumer_types.Delivery, retryCount int) {
 	log.Printf("This is the %d attempt", retryCount)
 	retryQueueName := getRetryQueueName(retryCount)
 	if retryCount >= 3 {
-		log.Printf("Max retries reached. Sending to DLQ: %s", d.Body)
+		log.Printf("Max retries reached. Sending to DLQ: %s", d.Body())
 		err := d.Nack(false, false)
 		logs.LogError(err, "Was not able to nack in retry")
 		return
 	}
 	log.Printf("This is the %d attempt going to %s queue", retryCount, retryQueueName)
-	headers := populateHeader(d.Headers, retryCount)
+	headers := populateHeader(d.Headers(), retryCount)
 	err := d.Ack(false)
 	logs.LogError(err, "Failed to ack")
 	err = ch.Publish(
@@ -71,8 +72,8 @@ func retry(ch *amqp.Channel, d amqp.Delivery, retryCount int) {
 		false,
 		false,
 		amqp.Publishing{
-			ContentType:  d.ContentType,
-			Body:         d.Body,
+			ContentType:  d.ContentType(),
+			Body:         d.Body(),
 			Headers:      headers,
 			DeliveryMode: amqp.Persistent,
 		},
@@ -80,11 +81,11 @@ func retry(ch *amqp.Channel, d amqp.Delivery, retryCount int) {
 	logs.LogError(err, "Failed to retry")
 }
 
-func processMessage(d amqp.Delivery, ch *amqp.Channel) {
-	retryCount := getRetryCount(d.Headers)
+func processMessage(d consumer_types.Delivery, ch consumer_types.Channel) {
+	retryCount := getRetryCount(d.Headers())
 	var reqBody types.RequestBody
-	log.Printf("Message received from consumer or retry_queue: %s", d.Body)
-	err := json.Unmarshal(d.Body, &reqBody)
+	log.Printf("Message received from consumer or retry_queue: %s", d.Body())
+	err := json.Unmarshal(d.Body(), &reqBody)
 	logs.LogError(err, "Error with unmarshalling json")
 	if err != nil {
 		_ = d.Nack(false, false)
@@ -121,7 +122,7 @@ func workerConsumeAndProcessMessage(ch *amqp.Channel, id int) {
 	logs.FailOnError(err, "Failed to read messages")
 	for d := range msgs {
 		log.Printf("Worker %d: Started processing message", id)
-		processMessage(d, ch)
+		processMessage(consumer_types.NewDeliveryAdapter(d), ch)
 		log.Printf("Worker %d: Finished processing message", id)
 	}
 }
