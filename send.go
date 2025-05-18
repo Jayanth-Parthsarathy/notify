@@ -20,7 +20,7 @@ func failOnError(err error, msg string) {
 	}
 }
 
-func handleNotification(w http.ResponseWriter, req *http.Request, ch *amqp.Channel, q amqp.Queue) {
+func handleNotification(w http.ResponseWriter, req *http.Request, ch *amqp.Channel, q *amqp.Queue) {
 	if req.Method != http.MethodPost {
 		http.Error(w, "Only post method is accepted", http.StatusMethodNotAllowed)
 		return
@@ -31,26 +31,26 @@ func handleNotification(w http.ResponseWriter, req *http.Request, ch *amqp.Chann
 		http.Error(w, "Invalid request body", http.StatusBadRequest)
 		return
 	}
+	defer req.Body.Close()
 	jsonBody, err := json.Marshal(reqBody)
 	if err != nil {
-		http.Error(w, "Something went wrong", http.StatusInternalServerError)
+		http.Error(w, "Invalid JSON Structure", http.StatusInternalServerError)
 		return
 	}
-	defer req.Body.Close()
-	ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
-	defer cancel()
-	err = ch.PublishWithContext(ctx, "", q.Name, false, false, amqp.Publishing{
-		ContentType: "application/json",
-		Body:        jsonBody,
-	})
-	if err != nil {
-		http.Error(w, "Failed to publish message", http.StatusInternalServerError)
-		return
-	}
-	log.Printf("Published message: %s\n", string(jsonBody))
+	go func() {
+		ctx, cancel := context.WithTimeout(context.Background(), 5*time.Second)
+		defer cancel()
+		err = ch.PublishWithContext(ctx, "", q.Name, false, false, amqp.Publishing{
+			ContentType: "application/json",
+			Body:        jsonBody,
+		})
+		if err != nil {
+			log.Printf("Failed to publish message: %s", err)
+		}
+		log.Printf("Published message: %s\n", string(jsonBody))
+	}()
 	w.WriteHeader(http.StatusOK)
 	w.Write([]byte("Notification queued successfully"))
-	return
 }
 
 func main() {
@@ -70,8 +70,9 @@ func main() {
 	)
 	failOnError(err, "Failed to create queue")
 	http.HandleFunc("/notify", func(w http.ResponseWriter, req *http.Request) {
-		handleNotification(w, req, ch, q)
+		handleNotification(w, req, ch, &q)
 	})
-	failOnError(err, "Failed to publish a message")
-	http.ListenAndServe(":8090", nil)
+	if err := http.ListenAndServe(":8090", nil); err != nil {
+		log.Fatalf("Server failed to start: %v", err)
+	}
 }
