@@ -2,6 +2,7 @@ package consumer
 
 import (
 	"errors"
+	"os"
 	"testing"
 
 	constants "github.com/jayanth-parthsarathy/notify/internal/common/constants"
@@ -82,6 +83,11 @@ func (m *MockDelivery) ContentType() string {
 func (m *MockDelivery) Headers() amqp.Table {
 	args := m.Called()
 	return args.Get(0).(amqp.Table)
+}
+
+func (m *MockDelivery) MessageId() string {
+	args := m.Called()
+	return args.String(0)
 }
 
 func TestRetry_MaxRetries(t *testing.T) {
@@ -232,4 +238,39 @@ func TestProcessMessage_FailureInvalidEmail(t *testing.T) {
 	ch.AssertNotCalled(t, "Publish", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
 	em.AssertCalled(t, "SendEmail", "foo", "hello", "hello world")
 	d.AssertCalled(t, "Nack", false, false)
+}
+
+func TestProcessDLQMessage_AckSuccess(t *testing.T) {
+	mockD := new(MockDelivery)
+	mockD.On("Body").Return([]byte("hello"))
+	mockD.On("Headers").Return(amqp.Table{"key": "value"})
+	mockD.On("Ack", false).Return(nil)
+	mockD.On("MessageId").Return("123")
+
+	f, err := os.CreateTemp("", "logfile")
+	assert.NoError(t, err)
+	defer os.Remove(f.Name())
+
+	err = processDLQMessage(mockD, f)
+	assert.NoError(t, err)
+
+	mockD.AssertExpectations(t)
+}
+
+func TestProcessDLQMessage_AckFail(t *testing.T) {
+	mockD := new(MockDelivery)
+	mockD.On("MessageId").Return("123")
+	mockD.On("Body").Return([]byte("hello"))
+	mockD.On("Headers").Return(amqp.Table{"key": "value"})
+	mockD.On("Ack", false).Return(assert.AnError)
+	mockD.On("Nack", false, true).Return(nil)
+
+	f, err := os.CreateTemp("", "logfile")
+	assert.NoError(t, err)
+	defer os.Remove(f.Name())
+
+	err = processDLQMessage(mockD, f)
+	assert.Error(t, err)
+
+	mockD.AssertExpectations(t)
 }

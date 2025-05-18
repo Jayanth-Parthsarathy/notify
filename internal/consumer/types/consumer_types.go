@@ -14,20 +14,22 @@ type Delivery interface {
 	Body() []byte
 	ContentType() string
 	Headers() amqp.Table
+	MessageId() string
 }
 
 type DeliveryAdapter struct {
 	D amqp.Delivery
 }
 
-func (a DeliveryAdapter) Ack(multiple bool) error           { return a.D.Ack(multiple) }
-func (a DeliveryAdapter) Nack(multiple, requeue bool) error { return a.D.Nack(multiple, requeue) }
-func (a DeliveryAdapter) Body() []byte                      { return a.D.Body }
-func (a DeliveryAdapter) ContentType() string               { return a.D.ContentType }
-func (a DeliveryAdapter) Headers() amqp.Table               { return a.D.Headers }
+func (a *DeliveryAdapter) Ack(multiple bool) error           { return a.D.Ack(multiple) }
+func (a *DeliveryAdapter) Nack(multiple, requeue bool) error { return a.D.Nack(multiple, requeue) }
+func (a *DeliveryAdapter) Body() []byte                      { return a.D.Body }
+func (a *DeliveryAdapter) ContentType() string               { return a.D.ContentType }
+func (a *DeliveryAdapter) Headers() amqp.Table               { return a.D.Headers }
+func (a *DeliveryAdapter) MessageId() string                 { return a.D.MessageId }
 
-func NewDeliveryAdapter(d amqp.Delivery) DeliveryAdapter {
-	return DeliveryAdapter{D: d}
+func NewDeliveryAdapter(d amqp.Delivery) *DeliveryAdapter {
+	return &DeliveryAdapter{D: d}
 }
 
 type EmailSender interface {

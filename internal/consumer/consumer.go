@@ -196,7 +196,7 @@ func dlqConsumeAndProcessMessages(ch *amqp.Channel, id int) {
 	logs.LogError(err, "Failed to open log file")
 	for d := range dlqMsgs {
 		log.Printf("DLQ Worker %d: Started processing message", id)
-		err = processDLQMessage(d, f)
+		err = processDLQMessage(consumer_types.NewDeliveryAdapter(d), f)
 		logs.LogError(err, "Error with processDLQMessage")
 		if err == nil {
 			log.Printf("DLQ Worker %d: Finished processing message", id)
@@ -211,9 +211,9 @@ func dlqWorker(id int, conn *amqp.Connection, wg *sync.WaitGroup) {
 	dlqConsumeAndProcessMessages(ch, id)
 }
 
-func processDLQMessage(d amqp.Delivery, f *os.File) error {
+func processDLQMessage(d consumer_types.Delivery, f *os.File) error {
 	logger := log.New(f, "DLQ: ", log.LstdFlags|log.Lmsgprefix)
-	logger.Printf("Message ID: %s, Body: %s, Headers: %v", d.MessageId, d.Body, d.Headers)
+	logger.Printf("Message ID: %s, Body: %s, Headers: %v", d.MessageId(), d.Body(), d.Headers())
 	err := d.Ack(false)
 	logs.LogError(err, "Failed to Ack DLQ message")
 	if err != nil {
