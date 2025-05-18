@@ -11,7 +11,7 @@ import (
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-func HandleNotification(w http.ResponseWriter, req *http.Request, ch *amqp.Channel, q *amqp.Queue) {
+func handleNotification(w http.ResponseWriter, req *http.Request, ch *amqp.Channel, q *amqp.Queue) {
 	if req.Method != http.MethodPost {
 		http.Error(w, "Only post method is accepted", http.StatusMethodNotAllowed)
 		return
@@ -45,7 +45,7 @@ func HandleNotification(w http.ResponseWriter, req *http.Request, ch *amqp.Chann
 
 func StartServer(q *amqp.Queue, ch *amqp.Channel) {
 	http.HandleFunc("/notify", func(w http.ResponseWriter, req *http.Request) {
-		HandleNotification(w, req, ch, q)
+		handleNotification(w, req, ch, q)
 	})
 	err := http.ListenAndServe(":8090", nil)
 	logs.FailOnError(err, "Server failed to start")

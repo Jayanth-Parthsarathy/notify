@@ -10,6 +10,6 @@ func main() {
 	conn, ch := util.ConnectToRabbitMQ()
 	defer conn.Close()
 	defer ch.Close()
-	q := util.DeclareQueue(ch)
-	consumer.StartWorkers(ch, q)
+	q, dlq := util.DeclareQueue(ch)
+	consumer.StartWorkers(ch, q, dlq)
 }

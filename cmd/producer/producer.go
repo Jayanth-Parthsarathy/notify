@@ -11,6 +11,6 @@ func main() {
 	conn, ch := util.ConnectToRabbitMQ()
 	defer conn.Close()
 	defer ch.Close()
-	q := util.DeclareQueue(ch)
+	q, _ := util.DeclareQueue(ch)
 	producer.StartServer(q, ch)
 }

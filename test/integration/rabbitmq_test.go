@@ -31,7 +31,7 @@ func TestRabbitMQDeclareQueue(t *testing.T) {
 	defer conn.Close()
 	defer ch.Close()
 
-	q := util.DeclareQueue(ch)
+	q, _ := util.DeclareQueue(ch)
 
 	if q == nil || q.Name != "notification_queue" {
 		t.Fatalf("Expected queue 'notification_queue', got: %v", q)

@@ -12,15 +12,32 @@ No external libraries were used for setting up the HTTP server; the standard lib
 
 This project currently consists of two files:
 
-* sender.go: This is an HTTP server that exposes a /notify endpoint.
+* `cmd/consumer/consumer.go`: This is an HTTP server that exposes a /notify endpoint.
 When a request is made to this endpoint with an email and message, the server publishes the notification to the RabbitMQ queue.
 
-* receiver/receiver.go: This is the consumer application.
+* `cmd/producer/producer.go`: This is the consumer application.
 It reads messages from the queue and uses multiple concurrent workers to process and send the notifications asynchronously.
 
+I have also implemented a Dead Letter Queue for handling messages that were not be able to be processed for some reason
+
+## Usage
+
+#### Copy the .env.test and change fields if necessary
+`cp .env.test .env`
+
+#### To start the consumer
+`go run cmd/consumer/consumer.go`
+
+#### To start the producer
+`go run cmd/producer/producer.go`
+
+#### Make sure the RabbitMQ instance is running, if not:
+`docker run -it --rm --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:4-management`
+
 ## TODO
-- Add retry logic if sending fails
-- Add basic email format validation
-- Save failed messages to database for later retry
-- Write unit tests for sender and receiver
-- Add Dockerfile to run locally with RabbitMQ easily
+- [ ] Add retry logic if sending fails
+- [ ] Add basic email format validation
+- [ ] Write unit tests for sender and receiver
+- [ ] Add Dockerfile to run locally with RabbitMQ easily (Dockerize entire application)
+- [ ] Add integration testing
+- [x] ~~Add Dead-Letter-Queue~~

@@ -21,8 +21,22 @@ func ConnectToRabbitMQ() (*amqp.Connection, *amqp.Channel) {
 	return conn, ch
 }
 
-func DeclareQueue(ch *amqp.Channel) *amqp.Queue {
-	q, err := ch.QueueDeclare("notification_queue", true, false, false, false, nil)
+func DeclareQueue(ch *amqp.Channel) (*amqp.Queue, *amqp.Queue) {
+	dlq, err := ch.QueueDeclare(
+		"notification_dlq", // name of the DLQ
+		true,               // durable
+		false,              // delete when unused
+		false,              // exclusive
+		false,              // no-wait
+		nil,                // arguments
+	)
+	logs.FailOnError(err, "Failed to declare DLQ")
+	args := amqp.Table{
+		"x-dead-letter-exchange":    "",
+		"x-dead-letter-routing-key": "notification_dlq",
+		"x-message-ttl":             int32(60000),
+	}
+	q, err := ch.QueueDeclare("notification_queue_with_dlq", true, false, false, false, args)
 	logs.FailOnError(err, "Failed to create queue")
-	return &q
+	return &q, &dlq
 }
