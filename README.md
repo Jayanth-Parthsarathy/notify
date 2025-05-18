@@ -130,6 +130,9 @@ Request
 }
 ```
 
+## Architecture Diagram
+![Architecture Diagram](assets/images/notify-architecture.png)
+
 ## TODO
 - [x] ~~Add retry logic if sending fails~~
 - [x] ~~Write unit tests for sender and receiver~~
@@ -138,4 +141,4 @@ Request
 - [x] ~~Add basic email format validation~~
 - [x] ~~Add integration testing~~
 - [x] ~~Add dlq inspector with persistence to allow for manual requeue~~
-- [ ] Create system architecture diagram for understanding
+- [x] ~~Create system architecture diagram for understanding~~
