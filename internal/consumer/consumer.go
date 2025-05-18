@@ -3,6 +3,7 @@ package consumer
 import (
 	"encoding/json"
 	"log"
+	"net/smtp"
 	"os"
 	"sync"
 
@@ -13,6 +14,32 @@ import (
 	consumer_types "github.com/jayanth-parthsarathy/notify/internal/consumer/types"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
+
+type GmailSender struct {
+}
+
+func (g *GmailSender) SendEmail(recipient string, body string, subject string) error {
+	from := os.Getenv("FROM_EMAIL")
+	password := os.Getenv("APP_PASSWORD")
+	to := []string{recipient}
+
+	smtpHost := os.Getenv("SMTPHOST")
+	smtpPort := os.Getenv("SMTPPORT")
+
+	message := []byte(
+		"From: " + from + "\r\n" +
+			"To: " + recipient + "\r\n" +
+			"Subject: " + subject + "\r\n" +
+			"MIME-version: 1.0;\r\n" +
+			"Content-Type: text/plain; charset=\"UTF-8\";\r\n" +
+			"\r\n" +
+			body + "\r\n")
+
+	auth := smtp.PlainAuth("", from, password, smtpHost)
+
+	err := smtp.SendMail(smtpHost+":"+smtpPort, auth, from, to, message)
+	return err
+}
 
 func getRetryCount(headers amqp.Table) int {
 	if headers == nil {
@@ -81,7 +108,7 @@ func retry(ch consumer_types.Channel, d consumer_types.Delivery, retryCount int)
 	logs.LogError(err, "Failed to retry")
 }
 
-func processMessage(d consumer_types.Delivery, ch consumer_types.Channel) {
+func processMessage(d consumer_types.Delivery, ch consumer_types.Channel, em consumer_types.EmailSender) {
 	retryCount := getRetryCount(d.Headers())
 	var reqBody types.RequestBody
 	log.Printf("Message received from consumer or retry_queue: %s", d.Body())
@@ -91,9 +118,8 @@ func processMessage(d consumer_types.Delivery, ch consumer_types.Channel) {
 		_ = d.Nack(false, false)
 		return
 	}
-	// some email sending processing will happen here, if it fails we retry else we dont (if it fail err wont be nil and so will be retried)
-	// err = errors.New("some")
-	err = nil
+	err = em.SendEmail(reqBody.Email, reqBody.Message, reqBody.Subject)
+	logs.LogError(err, "Failed to send email")
 	if err != nil {
 		retry(ch, d, retryCount+1)
 		return
@@ -122,7 +148,8 @@ func workerConsumeAndProcessMessage(ch *amqp.Channel, id int) {
 	logs.FailOnError(err, "Failed to read messages")
 	for d := range msgs {
 		log.Printf("Worker %d: Started processing message", id)
-		processMessage(consumer_types.NewDeliveryAdapter(d), ch)
+		gmailSender := GmailSender{}
+		processMessage(consumer_types.NewDeliveryAdapter(d), ch, &gmailSender)
 		log.Printf("Worker %d: Finished processing message", id)
 	}
 }

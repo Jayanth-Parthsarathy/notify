@@ -1,6 +1,7 @@
 package consumer
 
 import (
+	"errors"
 	"testing"
 
 	constants "github.com/jayanth-parthsarathy/notify/internal/common/constants"
@@ -130,58 +131,74 @@ func TestRetry_SingleRetry(t *testing.T) {
 	msg.AssertExpectations(t)
 }
 
+type MockEmailSender struct {
+	mock.Mock
+}
+
+func (m *MockEmailSender) SendEmail(recipient string, body string, subject string) error {
+	args := m.Called(recipient, body, subject)
+	return args.Error(0)
+}
+
 func TestProcessMessage_MalformedJSON(t *testing.T) {
 	d := new(MockDelivery)
 	ch := new(MockChannel)
+	em := new(MockEmailSender)
 
 	d.On("Body").Return([]byte("not-json"))
 	d.On("Headers").Return(amqp.Table(nil))
 	d.On("Nack", false, false).Return(nil)
 
-	processMessage(d, ch)
+	processMessage(d, ch, em)
 
 	d.AssertCalled(t, "Nack", false, false)
 	d.AssertNotCalled(t, "Ack", mock.Anything)
 	ch.AssertNotCalled(t, "Publish", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	em.AssertNotCalled(t, "SendEmail", mock.Anything, mock.Anything, mock.Anything)
 }
 
 func TestProcessMessage_Success(t *testing.T) {
 	d := new(MockDelivery)
 	ch := new(MockChannel)
+	em := new(MockEmailSender)
 
-	valid := `{"email":"foo@bar.com","message":"hello"}`
+	valid := `{"email":"foo@bar.com","message":"hello", "subject": "hello world"}`
 	d.On("Body").Return([]byte(valid))
 	d.On("Headers").Return(amqp.Table(nil))
 	d.On("Ack", false).Return(nil)
+	em.On("SendEmail", "foo@bar.com", "hello", "hello world").Return(nil)
 
-	processMessage(d, ch)
+	processMessage(d, ch, em)
 
 	d.AssertCalled(t, "Ack", false)
 	d.AssertNotCalled(t, "Nack", mock.Anything, mock.Anything)
 	ch.AssertNotCalled(t, "Publish", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	em.AssertCalled(t, "SendEmail", "foo@bar.com", "hello", "hello world")
 }
 
-// TODO: Not yet implemented
-// func TestProcessMessage_FailureRetries(t *testing.T) {
-// 	d := new(MockDelivery)
-// 	ch := new(MockChannel)
-//
-// 	valid := `{"Email":"foo@bar.com","Message":"hello"}`
-// 	d.On("Body").Return([]byte(valid))
-// 	d.On("Headers").Return(amqp.Table{"x-retry-count": int32(0)})
-// 	d.On("ContentType").Return("application/json")
-// 	d.On("Ack", false).Return(nil)
-// 	ch.On("Publish",
-// 		constants.RetryExchangeName,
-// 		constants.Retry10sQueue,
-// 		false, false,
-// 		mock.MatchedBy(func(pub amqp.Publishing) bool {
-// 			v := getRetryCount(pub.Headers)
-// 			return v == 1
-// 		}),
-// 	).Return(nil)
-//
-// 	processMessage(d, ch)
-//
-// 	ch.AssertCalled(t, "Publish", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
-// }
+func TestProcessMessage_FailureRetries(t *testing.T) {
+	d := new(MockDelivery)
+	ch := new(MockChannel)
+	em := new(MockEmailSender)
+
+	valid := `{"email":"foo@bar.com","message":"hello", "subject":"hello world"}`
+	d.On("Body").Return([]byte(valid))
+	d.On("Headers").Return(amqp.Table{"x-retry-count": int32(0)})
+	d.On("ContentType").Return("application/json")
+	d.On("Ack", false).Return(nil)
+	ch.On("Publish",
+		constants.RetryExchangeName,
+		constants.Retry10sQueue,
+		false, false,
+		mock.MatchedBy(func(pub amqp.Publishing) bool {
+			v := getRetryCount(pub.Headers)
+			return v == 1
+		}),
+	).Return(nil)
+	em.On("SendEmail", "foo@bar.com", "hello", "hello world").Return(errors.New("This is testing error"))
+
+	processMessage(d, ch, em)
+
+	ch.AssertCalled(t, "Publish", mock.Anything, mock.Anything, mock.Anything, mock.Anything, mock.Anything)
+	em.AssertCalled(t, "SendEmail", "foo@bar.com", "hello", "hello world")
+}

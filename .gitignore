@@ -1,3 +1,4 @@
 notify
+.env.docker
 .env
 *.log

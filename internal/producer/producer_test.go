@@ -18,7 +18,7 @@ import (
 )
 
 func TestValidateRequestBody_ValidJSON(t *testing.T) {
-	validJSON := `{"email":"test@example.com","message":"Hello"}`
+	validJSON := `{"email":"test@example.com","message":"Hello", "subject":"hello"}`
 	req := httptest.NewRequest(http.MethodPost, "/notify", bytes.NewBufferString(validJSON))
 	w := httptest.NewRecorder()
 

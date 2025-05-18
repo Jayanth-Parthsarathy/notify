@@ -28,5 +28,4 @@ export default function () {
     'status is 200': (r) => r.status === 200,
   });
 
-  // sleep(1); // Wait 1s between requests per VU
 }

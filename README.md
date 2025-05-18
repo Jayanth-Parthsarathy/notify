@@ -1,23 +1,28 @@
 # Notify
 
-This is a simple notification service built using Golang that uses RabbitMQ as a queue, with asynchronous workers to poll and send messages.
+**Notify** is a simple notification service built in Go that uses RabbitMQ for asynchronous message processing and retries.
 
-RabbitMQ is used to improve the scalability of the system.
-Instead of overloading the main server with message processing, we offload messages to a queue, where they are handled asynchronously by worker processes.
+It is designed to offload message handling from the main server to a queue, where concurrent workers process notifications in the background. This improves scalability and fault tolerance.
 
-This project uses Golang because it is simple to use and easy to get started with.
-Additionally, goroutines and channels in Go make implementing concurrency straightforward and efficient.
+## ✨ Features
 
-No external libraries were used for setting up the HTTP server; the standard library was sufficient for this use case.
+* Built using Golang with standard library
 
-It is fully dockerized with dependencies like RabbitMQ
+* Uses goroutines for concurrent execution of sending notifications
 
-It also has retry with exponential backoff using multiple queues with different TTL that link up in a cycle to the main queue.
+* Fully Dockerized with RabbitMQ services included
 
-It also implements a Dead Letter Queue for handling messages that were not be able to be processed for some reason and have reached max Number of retries (currently saves these messages to a log file)
+* Implements exponential backoff retry queues (10s → 30s → 60s)
 
-It also has unit tests for most of the internal function with mock testing wherever necessary for testing out the logic
-It currently consists of two files:
+* Dead-Letter-Queue for handling messages that have exceeded max-retries and failed (Logs to a file)
+
+* Unit tests with mock (via Testify) for most of the internal logic
+
+* Sends emails using `net/smtp` via an abstracted `EmailSender` interface
+
+* Includes load tests via `k6` in `load_test.js`
+
+It currently consists of two main files:
 
 * `cmd/consumer/consumer.go`: This is an HTTP server that exposes a /notify endpoint.
 When a request is made to this endpoint with an email and message, the server publishes the notification to the RabbitMQ queue.
@@ -25,31 +30,57 @@ When a request is made to this endpoint with an email and message, the server pu
 * `cmd/producer/producer.go`: This is the consumer application.
 It reads messages from the queue and uses multiple concurrent workers to process and send the notifications asynchronously.
 
-## Usage
+## 🚀 Usage
 
-### Using docker
+### 📦 Docker (Recommended)
 
-`docker-compose up --build`
+```bash
+docker-compose --env-file .env.docker up --build
+```
 
-### Manual
+### 🛠️ Manual
 
-#### Copy the .env.test and change fields if necessary
-`cp .env.test .env`
+#### Copy the .env.test and add the missing fields
+```bash
+cp .env.test .env
+```
 
 #### To start the consumer
-`go run cmd/consumer/consumer.go`
+```bash
+go run cmd/consumer/consumer.go
+```
 
 #### To start the producer
-`go run cmd/producer/producer.go`
+```bash
+go run cmd/producer/producer.go
+```
 
 #### Make sure the RabbitMQ instance is running, if not:
-`docker run -it --rm --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:4-management`
+```bash
+docker run -it --rm --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:4-management
+```
+### 🧪 Testing
+```bash
+go test ./...
+```
+All core components are covered by unit tests with mock logic for external dependencies.
+
+### 📬 API Endpoint
+`POST /notify`
+
+```json
+{
+  "email": "user@example.com",
+  "message": "Hello from Notify!",
+  "subject": "Hello"
+}
+```
 
 ## TODO
 - [x] ~~Add retry logic if sending fails~~
-- [ ] Add basic email format validation
 - [x] ~~Write unit tests for sender and receiver~~
-- [ ] Create system architecture diagram for understanding
-- [ ] Add integration testing
 - [x] ~~Add Dockerfile to run locally with RabbitMQ easily (Dockerize entire application)~~
 - [x] ~~Add Dead-Letter-Queue~~
+- [ ] Add basic email format validation
+- [ ] Add integration testing
+- [ ] Create system architecture diagram for understanding

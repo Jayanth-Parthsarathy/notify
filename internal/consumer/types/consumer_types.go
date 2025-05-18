@@ -29,3 +29,7 @@ func (a DeliveryAdapter) Headers() amqp.Table               { return a.D.Headers
 func NewDeliveryAdapter(d amqp.Delivery) DeliveryAdapter {
 	return DeliveryAdapter{D: d}
 }
+
+type EmailSender interface {
+	SendEmail(recipient string, body string, subject string) error
+}
