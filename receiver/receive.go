@@ -3,15 +3,13 @@ package main
 import (
 	"encoding/json"
 	"log"
+	"os"
 	"sync"
 
-	ampq "github.com/rabbitmq/amqp091-go"
+	"github.com/jayanth-parthsarathy/notify/common"
+	"github.com/joho/godotenv"
+	amqp "github.com/rabbitmq/amqp091-go"
 )
-
-type RequestBody struct {
-	Email   string `json:"email"`
-	Message string `json:"message"`
-}
 
 func failOnError(err error, msg string) {
 	if err != nil {
@@ -19,8 +17,8 @@ func failOnError(err error, msg string) {
 	}
 }
 
-func processMessage(d ampq.Delivery) {
-	var reqBody RequestBody
+func processMessage(d amqp.Delivery) {
+	var reqBody common.RequestBody
 	log.Printf("some message received: %s", d.Body)
 	err := json.Unmarshal(d.Body, &reqBody)
 	if err != nil {
@@ -35,9 +33,10 @@ func processMessage(d ampq.Delivery) {
 	}
 }
 
-func worker(id int, msgs <-chan ampq.Delivery, wg *sync.WaitGroup) {
+func worker(id int, msgs <-chan amqp.Delivery, wg *sync.WaitGroup) {
 	defer wg.Done()
 	for d := range msgs {
+		// time.Sleep(time.Duration(3 * time.Second))
 		log.Printf("Worker %d: Started processing message", id)
 		processMessage(d)
 		log.Printf("Worker %d: Finished processing message", id)
@@ -45,13 +44,16 @@ func worker(id int, msgs <-chan ampq.Delivery, wg *sync.WaitGroup) {
 }
 
 func main() {
-	conn, err := ampq.Dial("amqp://guest:guest@localhost:5672/")
+	err := godotenv.Load(".env")
+	failOnError(err, "Failed to load .env")
+	rabbitmqUrl := os.Getenv("RABBIT_MQ_URL")
+	conn, err := amqp.Dial(rabbitmqUrl)
 	failOnError(err, "Failed to connect to RabbitMQ")
 	defer conn.Close()
 	ch, err := conn.Channel()
 	failOnError(err, "Failed to create channel")
 	defer ch.Close()
-	q, err := ch.QueueDeclare("notification", false, false, false, false, nil)
+	q, err := ch.QueueDeclare("notification_queue", true, false, false, false, nil)
 	failOnError(err, "Failed to create queue")
 	msgs, err := ch.Consume(q.Name, "", false, false, false, false, nil)
 	failOnError(err, "Failed to read messages")
