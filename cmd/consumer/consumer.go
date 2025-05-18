@@ -7,9 +7,8 @@ import (
 
 func main() {
 	util.LoadEnv()
-	conn, ch := util.ConnectToRabbitMQ()
+	conn := util.ConnectToRabbitMQ()
 	defer conn.Close()
-	defer ch.Close()
-	q, dlq := util.DeclareQueue(ch)
-	consumer.StartWorkers(ch, q, dlq)
+	util.DeclareQueue(conn)
+	consumer.StartWorkers(conn)
 }

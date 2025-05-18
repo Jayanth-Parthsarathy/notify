@@ -6,85 +6,162 @@ import (
 	"os"
 	"sync"
 
+	constants "github.com/jayanth-parthsarathy/notify/internal/common/constants"
 	logs "github.com/jayanth-parthsarathy/notify/internal/common/log"
 	types "github.com/jayanth-parthsarathy/notify/internal/common/types"
+	"github.com/jayanth-parthsarathy/notify/internal/common/util"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
 
-func processMessage(d amqp.Delivery) {
+func getRetryCount(headers amqp.Table) int {
+	if headers == nil {
+		return 0
+	}
+	switch v := headers["x-retry-count"].(type) {
+	case int32:
+		return int(v)
+	case int, int64:
+		return int(v.(int))
+	default:
+		return 0
+	}
+}
+
+func retry(ch *amqp.Channel, d amqp.Delivery, retryCount int) {
+	var retryQueueName string
+	log.Printf("This is the %d attempt", retryCount)
+	switch retryCount {
+	case 1:
+		retryQueueName = constants.Retry10sQueue
+	case 2:
+		retryQueueName = constants.Retry30sQueue
+	case 3:
+		retryQueueName = constants.Retry60sQueue
+	default:
+		log.Printf("Max retries reached. Sending to DLQ: %s", d.Body)
+		_ = d.Nack(false, false)
+		return
+	}
+	log.Printf("This is the %d attempt going to %s queue", retryCount, retryQueueName)
+	headers := d.Headers
+	if headers == nil {
+		headers = amqp.Table{}
+	}
+	headers["x-retry-count"] = int32(retryCount)
+	err := d.Ack(false)
+	logs.LogError(err, "Failed to ack")
+	err = ch.Publish(
+		constants.RetryExchangeName,
+		retryQueueName,
+		false,
+		false,
+		amqp.Publishing{
+			ContentType:  d.ContentType,
+			Body:         d.Body,
+			Headers:      headers,
+			DeliveryMode: amqp.Persistent,
+		},
+	)
+	logs.LogError(err, "Failed to retry")
+}
+
+func processMessage(d amqp.Delivery, ch *amqp.Channel) {
+	retryCount := getRetryCount(d.Headers)
 	var reqBody types.RequestBody
-	log.Printf("some message received: %s", d.Body)
+	log.Printf("Message received from consumer or retry_queue: %s", d.Body)
 	err := json.Unmarshal(d.Body, &reqBody)
+	logs.LogError(err, "Error with unmarshalling json")
 	if err != nil {
-		logs.LogError(err, "Error with unmarshalling json")
-		err = d.Nack(false, false)
-		if err != nil {
-			logs.LogError(err, "Error with Nacking:")
-		}
+		_ = d.Nack(false, false)
+		return
+	}
+	// some email sending processing will happen here, if it fails we retry else we dont (if it fail err wont be nil and so will be retried)
+	// err = errors.New("some")
+	err = nil
+	if err != nil {
+		retry(ch, d, retryCount+1)
 		return
 	}
 	log.Printf("The message recipient is: %s and the message is: %s", reqBody.Email, reqBody.Message)
 	err = d.Ack(false)
+	logs.LogError(err, "Not able to acknowledge:")
 	if err != nil {
-		logs.LogError(err, "Not able to acknowledge:")
-		err = d.Nack(false, false)
-		if err != nil {
-			logs.LogError(err, "Error with Nacking:")
-		}
+		d.Nack(false, true)
 		return
 	}
 }
 
-func worker(id int, msgs <-chan amqp.Delivery, wg *sync.WaitGroup) {
-	defer wg.Done()
+func workerConsumeAndProcessMessage(ch *amqp.Channel, id int) {
+	err := ch.Qos(1, 0, false)
+	logs.LogError(err, "Failed to set qos for channel")
+	msgs, err := ch.Consume(
+		constants.MainQueueName,
+		"",
+		false,
+		false,
+		false,
+		false,
+		nil,
+	)
+	logs.FailOnError(err, "Failed to read messages")
 	for d := range msgs {
-		// time.Sleep(time.Duration(3 * time.Second))
 		log.Printf("Worker %d: Started processing message", id)
-		processMessage(d)
+		processMessage(d, ch)
 		log.Printf("Worker %d: Finished processing message", id)
 	}
 }
 
-func dlqWorker(id int, msgs <-chan amqp.Delivery, wg *sync.WaitGroup) error {
+func worker(id int, conn *amqp.Connection, wg *sync.WaitGroup) {
+	ch := util.CreateChannel(conn)
+	defer ch.Close()
 	defer wg.Done()
+	workerConsumeAndProcessMessage(ch, id)
+}
+
+func dlqConsumeAndProcessMessages(ch *amqp.Channel, id int) {
+	err := ch.Qos(1, 0, false)
+	logs.LogError(err, "Failed to set qos for channel")
 	f, err := os.OpenFile("nack.log", os.O_APPEND|os.O_CREATE|os.O_WRONLY, 0644)
-	if err != nil {
-		logs.LogError(err, "Failed to open log file")
-		return err
-	}
-	for d := range msgs {
-		// time.Sleep(time.Duration(3 * time.Second))
+	dlqMsgs, err := ch.Consume(constants.DLQName, "", false, false, false, false, nil)
+	logs.FailOnError(err, "Failed to read messages")
+	logs.LogError(err, "Failed to open log file")
+	for d := range dlqMsgs {
 		log.Printf("DLQ Worker %d: Started processing message", id)
-		_ = processDLQMessage(d, f)
-		log.Printf("DLQ Worker %d: Finished processing message", id)
+		err = processDLQMessage(d, f)
+		logs.LogError(err, "Error with processDLQMessage")
+		if err == nil {
+			log.Printf("DLQ Worker %d: Finished processing message", id)
+		}
 	}
-	return nil
+}
+
+func dlqWorker(id int, conn *amqp.Connection, wg *sync.WaitGroup) {
+	ch := util.CreateChannel(conn)
+	defer ch.Close()
+	defer wg.Done()
+	dlqConsumeAndProcessMessages(ch, id)
 }
 
 func processDLQMessage(d amqp.Delivery, f *os.File) error {
 	logger := log.New(f, "DLQ: ", log.LstdFlags|log.Lmsgprefix)
 	logger.Printf("Message ID: %s, Body: %s, Headers: %v", d.MessageId, d.Body, d.Headers)
 	err := d.Ack(false)
+	logs.LogError(err, "Failed to Ack DLQ message")
 	if err != nil {
-		logger.Printf("Failed to Ack DLQ message: %v\n", err)
 		d.Nack(false, true)
 		return err
 	}
 	return nil
 }
 
-func StartWorkers(ch *amqp.Channel, q *amqp.Queue, dlq *amqp.Queue) {
-	msgs, err := ch.Consume(q.Name, "", false, false, false, false, nil)
-	logs.FailOnError(err, "Failed to read messages")
-	dlqMsgs, err := ch.Consume(dlq.Name, "", false, false, false, false, nil)
-	logs.FailOnError(err, "Failed to read dlq messages")
+func StartWorkers(conn *amqp.Connection) {
 	numWorkers := 5
 	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go worker(i, msgs, &wg)
+		go worker(i, conn, &wg)
 	}
 	wg.Add(1)
-	go dlqWorker(numWorkers+1, dlqMsgs, &wg)
+	go dlqWorker(numWorkers+1, conn, &wg)
 	wg.Wait()
 }

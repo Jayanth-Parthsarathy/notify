@@ -5,12 +5,10 @@ import (
 	"github.com/jayanth-parthsarathy/notify/internal/producer"
 )
 
-
 func main() {
 	util.LoadEnv()
-	conn, ch := util.ConnectToRabbitMQ()
+	conn := util.ConnectToRabbitMQ()
 	defer conn.Close()
-	defer ch.Close()
-	q, _ := util.DeclareQueue(ch)
-	producer.StartServer(q, ch)
+	util.DeclareQueue(conn)
+	producer.StartServer(conn)
 }

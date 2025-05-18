@@ -10,11 +10,13 @@ Additionally, goroutines and channels in Go make implementing concurrency straig
 
 No external libraries were used for setting up the HTTP server; the standard library was sufficient for this use case.
 
-This project also implements a Dead Letter Queue for handling messages that were not be able to be processed for some reason
+It is fully dockerized with dependencies like RabbitMQ
 
-This project is also fully dockerized with dependencies like RabbitMQ
+It also has retry with exponential backoff using multiple queues with different TTL that link up in a cycle to the main queue.
 
-This project currently consists of two files:
+It also implements a Dead Letter Queue for handling messages that were not be able to be processed for some reason and have reached max Number of retries (currently saves these messages to a log file)
+
+It currently consists of two files:
 
 * `cmd/consumer/consumer.go`: This is an HTTP server that exposes a /notify endpoint.
 When a request is made to this endpoint with an email and message, the server publishes the notification to the RabbitMQ queue.
@@ -43,9 +45,10 @@ It reads messages from the queue and uses multiple concurrent workers to process
 `docker run -it --rm --name rabbitmq -p 5672:5672 -p 15672:15672 rabbitmq:4-management`
 
 ## TODO
-- [ ] Add retry logic if sending fails
+- [x] ~~Add retry logic if sending fails~~
 - [ ] Add basic email format validation
 - [ ] Write unit tests for sender and receiver
-- [x] ~~Add Dockerfile to run locally with RabbitMQ easily (Dockerize entire application)~~
+- [ ] Create system architecture diagram for understanding
 - [ ] Add integration testing
+- [x] ~~Add Dockerfile to run locally with RabbitMQ easily (Dockerize entire application)~~
 - [x] ~~Add Dead-Letter-Queue~~
