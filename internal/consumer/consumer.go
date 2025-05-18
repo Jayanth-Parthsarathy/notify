@@ -20,16 +20,17 @@ func getRetryCount(headers amqp.Table) int {
 	switch v := headers["x-retry-count"].(type) {
 	case int32:
 		return int(v)
-	case int, int64:
-		return int(v.(int))
+	case int:
+		return v
+	case int64:
+		return int(v)
 	default:
 		return 0
 	}
 }
 
-func retry(ch *amqp.Channel, d amqp.Delivery, retryCount int) {
+func getRetryQueueName(retryCount int) string {
 	var retryQueueName string
-	log.Printf("This is the %d attempt", retryCount)
 	switch retryCount {
 	case 1:
 		retryQueueName = constants.Retry10sQueue
@@ -38,16 +39,30 @@ func retry(ch *amqp.Channel, d amqp.Delivery, retryCount int) {
 	case 3:
 		retryQueueName = constants.Retry60sQueue
 	default:
-		log.Printf("Max retries reached. Sending to DLQ: %s", d.Body)
-		_ = d.Nack(false, false)
-		return
+		retryQueueName = ""
 	}
-	log.Printf("This is the %d attempt going to %s queue", retryCount, retryQueueName)
-	headers := d.Headers
+	return retryQueueName
+}
+
+func populateHeader(headers amqp.Table, retryCount int) amqp.Table {
 	if headers == nil {
 		headers = amqp.Table{}
 	}
 	headers["x-retry-count"] = int32(retryCount)
+	return headers
+}
+
+func retry(ch *amqp.Channel, d amqp.Delivery, retryCount int) {
+	log.Printf("This is the %d attempt", retryCount)
+	retryQueueName := getRetryQueueName(retryCount)
+	if retryCount >= 3 {
+		log.Printf("Max retries reached. Sending to DLQ: %s", d.Body)
+		err := d.Nack(false, false)
+		logs.LogError(err, "Was not able to nack in retry")
+		return
+	}
+	log.Printf("This is the %d attempt going to %s queue", retryCount, retryQueueName)
+	headers := populateHeader(d.Headers, retryCount)
 	err := d.Ack(false)
 	logs.LogError(err, "Failed to ack")
 	err = ch.Publish(
