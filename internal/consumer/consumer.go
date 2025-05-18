@@ -2,13 +2,9 @@ package consumer
 
 import (
 	"encoding/json"
-	"fmt"
 	"log"
-	"net/smtp"
 	"os"
 	"sync"
-
-	"net/mail"
 
 	constants "github.com/jayanth-parthsarathy/notify/internal/common/constants"
 	logs "github.com/jayanth-parthsarathy/notify/internal/common/log"
@@ -17,49 +13,6 @@ import (
 	consumer_types "github.com/jayanth-parthsarathy/notify/internal/consumer/types"
 	amqp "github.com/rabbitmq/amqp091-go"
 )
-
-func valid(email string) bool {
-	_, err := mail.ParseAddress(email)
-	return err == nil
-}
-
-type InvalidEmailError struct {
-	email   string
-	message string
-}
-
-func (e *InvalidEmailError) Error() string {
-	return fmt.Sprintf("%s - %s", e.email, e.message)
-}
-
-type GmailSender struct {
-}
-
-func (g *GmailSender) SendEmail(recipient string, body string, subject string) error {
-	if !valid(recipient) {
-		return &InvalidEmailError{email: recipient, message: "Invalid email sending it to DLQ"}
-	}
-	from := os.Getenv("FROM_EMAIL")
-	password := os.Getenv("APP_PASSWORD")
-	to := []string{recipient}
-
-	smtpHost := os.Getenv("SMTPHOST")
-	smtpPort := os.Getenv("SMTPPORT")
-
-	message := []byte(
-		"From: " + from + "\r\n" +
-			"To: " + recipient + "\r\n" +
-			"Subject: " + subject + "\r\n" +
-			"MIME-version: 1.0;\r\n" +
-			"Content-Type: text/plain; charset=\"UTF-8\";\r\n" +
-			"\r\n" +
-			body + "\r\n")
-
-	auth := smtp.PlainAuth("", from, password, smtpHost)
-
-	err := smtp.SendMail(smtpHost+":"+smtpPort, auth, from, to, message)
-	return err
-}
 
 func getRetryCount(headers amqp.Table) int {
 	if headers == nil {
@@ -141,7 +94,7 @@ func processMessage(d consumer_types.Delivery, ch consumer_types.Channel, em con
 	err = em.SendEmail(reqBody.Email, reqBody.Message, reqBody.Subject)
 	logs.LogError(err, "Failed to send email")
 	if err != nil {
-		if _, ok := err.(*InvalidEmailError); ok {
+		if _, ok := err.(*consumer_types.InvalidEmailError); ok {
 			nackErr := d.Nack(false, false)
 			logs.LogError(nackErr, "Failed to nack on invalid email")
 		} else {
@@ -159,7 +112,7 @@ func processMessage(d consumer_types.Delivery, ch consumer_types.Channel, em con
 	}
 }
 
-func workerConsumeAndProcessMessage(ch *amqp.Channel, id int) {
+func workerConsumeAndProcessMessage(ch *amqp.Channel, id int, em consumer_types.EmailSender) {
 	err := ch.Qos(1, 0, false)
 	logs.LogError(err, "Failed to set qos for channel")
 	msgs, err := ch.Consume(
@@ -174,17 +127,16 @@ func workerConsumeAndProcessMessage(ch *amqp.Channel, id int) {
 	logs.FailOnError(err, "Failed to read messages")
 	for d := range msgs {
 		log.Printf("Worker %d: Started processing message", id)
-		gmailSender := GmailSender{}
-		processMessage(consumer_types.NewDeliveryAdapter(d), ch, &gmailSender)
+		processMessage(consumer_types.NewDeliveryAdapter(d), ch, em)
 		log.Printf("Worker %d: Finished processing message", id)
 	}
 }
 
-func worker(id int, conn *amqp.Connection, wg *sync.WaitGroup) {
+func worker(id int, conn *amqp.Connection, wg *sync.WaitGroup, em consumer_types.EmailSender) {
 	ch := util.CreateChannel(conn)
 	defer ch.Close()
 	defer wg.Done()
-	workerConsumeAndProcessMessage(ch, id)
+	workerConsumeAndProcessMessage(ch, id, em)
 }
 
 func dlqConsumeAndProcessMessages(ch *amqp.Channel, id int) {
@@ -223,12 +175,12 @@ func processDLQMessage(d consumer_types.Delivery, f *os.File) error {
 	return nil
 }
 
-func StartWorkers(conn *amqp.Connection) {
+func StartWorkers(conn *amqp.Connection, emailSender consumer_types.EmailSender) {
 	numWorkers := 5
 	var wg sync.WaitGroup
 	for i := 0; i < numWorkers; i++ {
 		wg.Add(1)
-		go worker(i, conn, &wg)
+		go worker(i, conn, &wg, emailSender)
 	}
 	wg.Add(1)
 	go dlqWorker(numWorkers+1, conn, &wg)

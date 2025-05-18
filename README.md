@@ -22,6 +22,8 @@ It is designed to offload message handling from the main server to a queue, wher
 
 * Includes load tests via `k6` in `load_test.js`
 
+* Includes basic integration testing for the flow
+
 It currently consists of two main files:
 
 * `cmd/consumer/consumer.go`: This is an HTTP server that exposes a /notify endpoint.
@@ -82,5 +84,5 @@ All core components are covered by unit tests with mock logic for external depen
 - [x] ~~Add Dockerfile to run locally with RabbitMQ easily (Dockerize entire application)~~
 - [x] ~~Add Dead-Letter-Queue~~
 - [x] ~~Add basic email format validation~~
-- [ ] Add integration testing
+- [x] ~~Add integration testing~~
 - [ ] Create system architecture diagram for understanding
