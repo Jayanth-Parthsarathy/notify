@@ -1,10 +1,16 @@
 package main
 
 import (
+	"encoding/json"
 	"log"
 
 	ampq "github.com/rabbitmq/amqp091-go"
 )
+
+type RequestBody struct {
+	Email   string `json:"email"`
+	Message string `json:"message"`
+}
 
 func failOnError(err error, msg string) {
 	if err != nil {
@@ -13,8 +19,16 @@ func failOnError(err error, msg string) {
 }
 
 func processMessages(msgs <-chan ampq.Delivery) {
+	log.Print("started processsing")
 	for d := range msgs {
-		log.Printf("Received a message: %s", d.Body)
+		var reqBody RequestBody
+		log.Printf("some message received: %s", d.Body)
+		err := json.Unmarshal(d.Body, &reqBody)
+		if err != nil {
+			log.Print("Error with unmarshalling json")
+			continue
+		}
+		log.Printf("The message recipient is: %s and the message is: %s", reqBody.Email, reqBody.Message)
 	}
 }
 
